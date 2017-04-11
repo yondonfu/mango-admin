@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 var fs = require('fs')
+var mkdirp = require('mkdirp')
 var Web3 = require('web3')
 var web3 = new Web3()
 var repoABI = require('./contracts/MangoRepoABI.json')
@@ -8,31 +9,32 @@ var path = require('path')
 var repoCode = fs.readFileSync(path.join(__dirname, 'contracts') + '/MangoRepo.bin').toString()
 
 var yargs = require('yargs')
-  .usage('Usage: $0 [command]')
-  .option('R', {
-    alias: 'repo',
-    describe: 'Repository address',
-    type: 'string'
-  })
-  .option('admin', {
-    describe: 'Treat as administrator',
-    type: 'boolean'
-  })
-  .option('account', {
-    describe: 'Sender account (a current administrator)',
-    type: 'string'
-  })
-  .global([ 'repo', 'admin' ])
-  .command('status', 'Check status of repository')
-  .command('create', 'Create repository')
-  .command('obsolete', 'Mark repository obsolete')
-  .command('authorize <address>', 'Authorize account with write access')
-  .command('deauthorize <address>', 'Deauthorize account')
-  .strict()
-  .version()
-  .showHelpOnFail(false, 'Specify --help for available options')
-  .help()
-  .demand(1, 'Must provide a command')
+    .usage('Usage: $0 [command]')
+    .option('R', {
+      alias: 'repo',
+      describe: 'Repository address',
+      type: 'string'
+    })
+    .option('admin', {
+      describe: 'Treat as administrator',
+      type: 'boolean'
+    })
+    .option('account', {
+      describe: 'Sender account (a current administrator)',
+      type: 'string'
+    })
+    .global([ 'repo', 'admin' ])
+    .command('status', 'Check status of repository')
+    .command('create', 'Create repository')
+    .command('obsolete', 'Mark repository obsolete')
+    .command('create-issue', 'Create an issue')
+    .command('authorize <address>', 'Authorize account with write access')
+    .command('deauthorize <address>', 'Deauthorize account')
+    .strict()
+    .version()
+    .showHelpOnFail(false, 'Specify --help for available options')
+    .help()
+    .demand(1, 'Must provide a command')
 
 var argv = yargs.argv
 var command = argv._[0]
@@ -42,14 +44,20 @@ function abort (msg) {
   process.exit(1)
 }
 
-function ensureRepo () {
-  if (!argv.repo) {
+function getRepo () {
+  var address
+
+  try {
+    address = fs.readFileSync('.mango/contract')
+  } catch (err) {
     abort('A repository address is mandatory for this operation')
   }
 
-  if (!web3.isAddress(argv.repo)) {
+  if (!web3.isAddress(address)) {
     abort('Invalid repository address')
   }
+
+  return address
 }
 
 function ensureAccount (account) {
@@ -60,6 +68,24 @@ function ensureAccount (account) {
   if (!web3.isAddress(account)) {
     abort('Invalid account')
   }
+}
+
+function updateMangoAddress (address) {
+  mkdirp('.mango', function(err) {
+    if (err) {
+      console.error(err)
+      return
+    } else {
+      fs.writeFile('.mango/contract', address, function(err) {
+        if (err) {
+          console.error(err)
+          return
+        } else {
+          console.log('Wrote contract address to .mango/contract')
+        }
+      })
+    }
+  })
 }
 
 console.log('Initialising...')
@@ -79,9 +105,9 @@ if (argv.account) {
 
 switch (command) {
   case 'create':
-    console.log('Creating new repository with administrator ' + from)
+    console.log('Creating new repository with maintainer ' + from)
 
-    web3.eth.contract(repoABI).new({ data: repoCode, from: from }, function (err, contract) {
+    web3.eth.contract(repoABI).new({ data: repoCode, from: from, gas: 50000000 }, function (err, contract) {
       if (err) {
         console.log('Error: ' + err)
         return
@@ -90,6 +116,7 @@ switch (command) {
       // Second callback will have the address
       if (contract.address) {
         console.log('Repository created: ' + contract.address)
+        updateMangoAddress(contract.address)
       } else if (contract.transactionHash) {
         console.log('Sent transaction: ' + contract.transactionHash)
       }
@@ -98,17 +125,18 @@ switch (command) {
     break
 
   case 'status':
-    console.log('Checking status of repository ' + argv.repo)
-    ensureRepo()
+    var address = getRepo()
 
-    var contract = web3.eth.contract(repoABI).at(argv.repo)
+    console.log('Checking status of repository ' + address)
+
+    var contract = web3.eth.contract(repoABI).at(address)
 
     var version = contract.repoInterfaceVersion().toNumber()
     if (version !== 1) {
       abort('Not a Mango repository?')
     }
 
-    if (web3.eth.contract(repoABI).at(argv.repo).isObsolete()) {
+    if (web3.eth.contract(repoABI).at(address).isObsolete()) {
       console.log('Repository is marked as OBSOLETE')
     }
 
@@ -141,7 +169,7 @@ switch (command) {
 
   case 'obsolete':
     console.log('Marking ' + argv.repo + ' as obsolete')
-    ensureRepo()
+    getRepo()
 
     web3.eth.contract(repoABI).at(argv.repo).setObsolete({ from: from }, function (err, contract) {
       if (err) {
@@ -156,7 +184,7 @@ switch (command) {
 
   case 'authorize':
     console.log('Authorizing ' + argv.address + ' for ' + argv.repo + ' as ' + (argv.admin ? 'admin' : 'committer'))
-    ensureRepo()
+    getRepo()
     ensureAccount(argv.address)
 
     web3.eth.contract(repoABI).at(argv.repo).authorize(argv.address, argv.admin, { from: from }, function (err, contract) {
@@ -172,7 +200,7 @@ switch (command) {
 
   case 'deauthorize':
     console.log('Deauthorizing ' + argv.address + ' for ' + argv.repo + ' as ' + (argv.admin ? 'admin' : 'committer'))
-    ensureRepo()
+    getRepo()
     ensureAccount(argv.address)
 
     web3.eth.contract(repoABI).at(argv.repo).deauthorize(argv.address, argv.admin, { from: from }, function (err, contract) {
@@ -183,6 +211,12 @@ switch (command) {
 
       console.log('Sent transaction: ' + contract)
     })
+
+    break
+
+  case 'create-issue':
+    console.log('Opening editor for issue creation...')
+    getRepo()
 
     break
 }
