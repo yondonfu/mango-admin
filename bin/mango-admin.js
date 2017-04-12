@@ -67,7 +67,7 @@ function ensureGitRepo() {
   return new Promise((resolve, reject) => {
     fs.stat('.git', (err, stats) => {
       if (err) {
-        reject(err);
+        reject(new Error('Need to be in a Git repository.'));
       } else {
         resolve(true);
       }
@@ -79,7 +79,7 @@ function getMangoAddress() {
   return new Promise((resolve, reject) => {
     fs.readFile('.mango/contract', 'utf-8', (err, data) => {
       if (err) {
-        reject(err);
+        reject(new Error('Need to be in a Mango repository.'));
       } else {
         resolve(data);
       }
@@ -89,10 +89,10 @@ function getMangoAddress() {
 
 function ensureMangoRepo() {
   return ensureGitRepo()
-    .then(() => getMangoAddress());
+    .then(getMangoAddress());
 }
 
-function initMango(address) {
+function setMango(address) {
   mkdirp('.mango/issues', err => {
     if (err) {
       console.error(err);
@@ -110,113 +110,127 @@ function initMango(address) {
   });
 }
 
+function mangoInit(account) {
+  console.log('Creating new Mango repository with maintainer' + account);
+
+  const { host, port } = argv;
+  const mangoRepoLib = initLib(host, port, null, account);
+
+  mangoRepoLib.create()
+    .then(address => {
+      console.log('Mango repository created: ' + address);
+      setMango(address);
+    }).catch(err => console.error(err));
+}
+
+function mangoStatus(address, account) {
+  const { host, port } = argv;
+
+  const mangoRepoLib = initLib(host, port, address, account);
+
+  return mangoRepoLib.refs()
+    .then(refs => console.log(refs))
+    .then(() => mangoRepoLib.snapshots())
+    .then(snapshots => console.log(snapshots));
+}
+
+function mangoListIssues() {
+  const editor = new IssueEditor();
+
+  return editor.list(ISSUES_DIR)
+    .then(issues => {
+      if (issues.length === 0) {
+        console.log('No issues.');
+      } else {
+        issues.map(issue => console.log(issue));
+      }
+    });
+}
+
+function mangoShowIssue() {
+  const editor = new IssueEditor();
+  const id = argv.id;
+
+  return editor.read(ISSUES_DIR + id + '.txt')
+    .then(content => console.log(content));
+}
+
+function mangoCreateIssue() {
+  const editor = new IssueEditor();
+
+  return editor.nextId(ISSUES_DIR)
+    .then(id => editor.newAndRead(ISSUES_DIR + id + '.txt'))
+    .then(content => console.log(content));
+}
+
+function mangoEditIssue() {
+  const editor = new IssueEditor();
+  const id = argv.id;
+
+  return editor.editAndRead(ISSUES_DIR + id + '.txt')
+    .then(content => console.log(content));
+}
+
+function mangoDeleteIssue() {
+  const editor = new IssueEditor();
+  const id = argv.id;
+
+  return editor.delete(ISSUES_DIR + id + '.txt')
+    .then(file => console.log('Deleted issue #' + id + ' -> ' + file));
+}
+
 switch (command) {
 
   case 'init':
     ensureGitRepo()
-      .then(() => getAccount(), err => console.log('Need to be in a Git repository.'))
-      .then(account => {
-        console.log('Creating new Mango repository with maintainer ' + account);
-
-        const { host, port } = argv;
-
-        const mangoRepoLib = initLib(host, port, null, account);
-        mangoRepoLib.create()
-          .then(address => {
-            console.log('Mango repository created: ' + address);
-            initMango(address);
-          });
-      });
+      .then(() => getAccount())
+      .then(account => mangoInit(account))
+      .catch(err => console.error(err));
 
     break;
 
   case 'status':
     ensureMangoRepo()
-      .then(address => getAccount(), err => console.log('Need to be in a Mango repository.'))
-      .then(account => {
-        const { host, port } = argv;
-
-        const mangoRepoLib = initLib(host, port, address, account);
-        mangoRepoLib.refs().then(refs => {
-          console.log(refs);
-        }, err => {
-          console.log(err);
-        });
-
-        mangoRepoLib.snapshots().then(snapshots => {
-          console.log(snapshots);
-        }, err => {
-          console.log(err);
-        });
-      });
+      .then(() => Promise.all([getAccount(), getMangoAddress()]))
+      .then(values => mangoStatus(values[0], values[1]))
+      .catch(err => console.error(err));
 
     break;
 
   case 'list-issues': {
     ensureMangoRepo()
-      .then(() => {
-        const editor = new IssueEditor();
-
-        editor.list(ISSUES_DIR).then(issues => {
-          if (issues.length === 0) {
-            console.log('No issues');
-          } else {
-            issues.map(issue => console.log(issue));
-          }
-        });
-      }, err => {
-        console.log('Need to be in an in a Mango repository.');
-      });
+      .then(() => mangoListIssues())
+      .catch(err => console.error(err));
 
     break;
   }
 
   case 'show-issue': {
     ensureMangoRepo()
-      .then(() => {
-        const editor = new IssueEditor();
-        const id = argv.id;
-
-        editor.read(ISSUES_DIR + id + '.txt')
-          .then(content => console.log(content));
-      });
+      .then(() => mangoShowIssue())
+      .catch(err => console.error(err));
 
     break;
   }
 
   case 'create-issue':
     ensureMangoRepo()
-      .then(() => {
-        const editor = new IssueEditor();
-
-        editor.nextId(ISSUES_DIR)
-          .then(nextId => editor.newAndRead(ISSUES_DIR + nextId + '.txt'))
-          .then(content => console.log(content));
-      });
+      .then(() => mangoCreateIssue())
+      .catch(err => console.error(err));
 
     break;
 
   case 'edit-issue':
     ensureMangoRepo()
-      .then(() => {
-        const editor = new IssueEditor();
-        const id = argv.id;
-
-        editor.editAndRead(ISSUES_DIR + id + '.txt')
-          .then(content => console.log(content));
-      });
+      .then(() => mangoEditIssue())
+      .catch(err => console.error(err));
 
     break;
 
   case 'delete-issue':
     ensureMangoRepo()
-      .then(() => {
-        const editor = new IssueEditor();
-        const id = argv.id;
-
-        editor.delete(ISSUES_DIR + id + '.txt')
-          .then(file => console.log('Deleted issue #' + id + ' -> ' + file));
-      });
+      .then(() => mangoDeleteIssue())
+      .catch(err => console.error(err));
 
     break;
 
