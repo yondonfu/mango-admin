@@ -142,7 +142,11 @@ function mangoIssues(mangoAddress, account) {
   const mangoRepoLib = initLib(host, port, mangoAddress, account);
 
   return mangoRepoLib.issues().then(issues => {
-    issues.map((issue, id) => console.log('Issue #' + id + ' -> ' + issue));
+    issues.map((issue, id) => {
+      if (issue) {
+        console.log('Issue #' + id + ' -> ' + issue);
+      }
+    });
   });
 }
 

@@ -108,9 +108,12 @@ contract MangoRepo {
 
   function getIssue(uint id) constant returns (string hash) {
     if (id >= issues.length || id < 0) throw;
-    if (bytes(issues[id].hash).length == 0) throw;
 
-    return issues[id].hash;
+    if (bytes(issues[id].hash).length == 0) {
+      return '';
+    } else {
+      return issues[id].hash;
+    }
   }
 
   function newIssue(string hash) {
