@@ -4,17 +4,18 @@ import yargs from 'yargs';
 import mkdirp from 'mkdirp';
 import fs from 'fs';
 import Web3 from 'Web3';
+
 import { default as initLib } from '../index';
 import IssueEditor from '../lib/issueEditor';
+import Swarm from 'swarm-js';
+
+const swarm = Swarm.at('http://swarm-gateways.net');
 
 const RPC_HOST = 'localhost';
 const RPC_PORT = '8545';
 
-const CONTRACT_DIR = '.mango/contract;';
+const CONTRACT_DIR = '.mango/contract/;';
 const ISSUES_DIR = '.mango/issues/';
-
-const provider = new Web3.providers.HttpProvider(`http:\/\/${RPC_HOST}:${RPC_PORT}`);
-const web3 = new Web3(provider);
 
 const args = yargs
       .option('host', {
@@ -34,34 +35,15 @@ const args = yargs
       })
       .command('init', 'Create a Mango repository')
       .command('status', 'Check the status of a Mango repository')
-      .command('list-issues', 'List issues for a Mango repository')
-      .command('show-issue <id>', 'Show issue for a Mango repository')
-      .command('create-issue', 'Create issue for a Mango repository')
-      .command('edit-issue <id>', 'Edit issue for a Mango repository')
+      .command('issues', 'List issues for a Mango repository')
+      .command('get-issue <id>', 'Get a issue for a Mango repository')
+      .command('new-issue', 'Create a new issue for a Mango repository')
+      .command('edit-issue <id>', 'Edit an issue for a Mango repository')
       .command('delete-issue <id>', 'Delete issue for a Mango repository')
       .help()
       .usage('Usage: $0 [command]');
 
-const { argv } = args;
 
-if (argv._.length === 0) {
-  args.showHelp();
-}
-
-const command = argv._[0];
-
-
-function getAccount() {
-  return new Promise((resolve, reject) => {
-    web3.eth.getAccounts((err, accounts) => {
-      if (err != null) {
-        reject(err);
-      } else {
-        resolve(accounts[0]);
-      }
-    });
-  });
-}
 
 function ensureGitRepo() {
   return new Promise((resolve, reject) => {
@@ -110,23 +92,43 @@ function setMango(address) {
   });
 }
 
+function getAccount() {
+  const { host, port } = argv;
+
+  const provider = new Web3.providers.HttpProvider(`http:\/\/${host}:${port}`);
+  const web3 = new Web3(provider);
+
+  return new Promise((resolve, reject) => {
+    web3.eth.getAccounts((err, accounts) => {
+      if (err != null) {
+        reject(err);
+      } else {
+        resolve(accounts[0]);
+      }
+    });
+  });
+}
+
 function mangoInit(account) {
-  console.log('Creating new Mango repository with maintainer' + account);
+  console.log('Creating new Mango repository with maintainer: ' + account);
 
   const { host, port } = argv;
+
   const mangoRepoLib = initLib(host, port, null, account);
 
-  mangoRepoLib.create()
+  return mangoRepoLib.init()
     .then(address => {
       console.log('Mango repository created: ' + address);
       setMango(address);
     }).catch(err => console.error(err));
 }
 
-function mangoStatus(address, account) {
+function mangoStatus(mangoAddress, account) {
+  console.log('Mango repostitory status:');
+
   const { host, port } = argv;
 
-  const mangoRepoLib = initLib(host, port, address, account);
+  const mangoRepoLib = initLib(host, port, mangoAddress, account);
 
   return mangoRepoLib.refs()
     .then(refs => console.log(refs))
@@ -134,50 +136,77 @@ function mangoStatus(address, account) {
     .then(snapshots => console.log(snapshots));
 }
 
-function mangoListIssues() {
-  const editor = new IssueEditor();
+function mangoIssues(mangoAddress, account) {
+  const { host, port } = argv;
 
-  return editor.list(ISSUES_DIR)
-    .then(issues => {
-      if (issues.length === 0) {
-        console.log('No issues.');
-      } else {
-        issues.map(issue => console.log(issue));
-      }
-    });
+  const mangoRepoLib = initLib(host, port, mangoAddress, account);
+
+  return mangoRepoLib.issues().then(issues => {
+    issues.map((issue, id) => console.log('Issue #' + id + ' -> ' + issue));
+  });
 }
 
-function mangoShowIssue() {
-  const editor = new IssueEditor();
-  const id = argv.id;
+function mangoGetIssue(mangoAddress, account) {
+  const { host, port, id } = argv;
 
-  return editor.read(ISSUES_DIR + id + '.txt')
-    .then(content => console.log(content));
-}
-
-function mangoCreateIssue() {
+  const mangoRepoLib = initLib(host, port, mangoAddress, account);
   const editor = new IssueEditor();
 
-  return editor.nextId(ISSUES_DIR)
-    .then(id => editor.newAndRead(ISSUES_DIR + id + '.txt'))
-    .then(content => console.log(content));
-}
+  return mangoRepoLib.getIssue(id)
+    .then(hash => swarm.download(hash))
+    .then(buf => console.log(buf.toString()));
+  }
 
-function mangoEditIssue() {
+function mangoNewIssue(mangoAddress, account) {
+  const { host, port } = argv;
+
+  const mangoRepoLib = initLib(host, port, mangoAddress, account);
   const editor = new IssueEditor();
-  const id = argv.id;
 
-  return editor.editAndRead(ISSUES_DIR + id + '.txt')
-    .then(content => console.log(content));
+  return mangoRepoLib.issueCount()
+    .then(count => {
+      const id = count.toNumber();
+
+      return editor.edit(ISSUES_DIR + id + '.txt')
+        .then(buf => swarm.upload(buf))
+        .then(hash => mangoRepoLib.newIssue(hash))
+        .then(hash => console.log('[new] Issue #' + id + ' -> ' + hash));
+      });
 }
 
-function mangoDeleteIssue() {
+function mangoEditIssue(mangoAddress, account) {
+  const { host, port, id } = argv;
+
+  const mangoRepoLib = initLib(host, port, mangoAddress, account);
   const editor = new IssueEditor();
-  const id = argv.id;
 
-  return editor.delete(ISSUES_DIR + id + '.txt')
-    .then(file => console.log('Deleted issue #' + id + ' -> ' + file));
+  return mangoRepoLib.getIssue(id)
+    .then(hash => swarm.download(hash))
+    .then(buf => editor.edit(ISSUES_DIR + id + '.txt', buf.toString()))
+    .then(buf => swarm.upload(buf))
+    .then(hash => mangoRepoLib.setIssue(id, hash))
+    .then(hash => console.log('[edit] Issue #' + id + ' -> ' + hash));
 }
+
+function mangoDeleteIssue(mangoAddress, account) {
+  const { host, port, id } = argv;
+
+  const mangoRepoLib = initLib(host, port, mangoAddress, account);
+  const editor = new IssueEditor();
+
+  return mangoRepoLib.deleteIssue(id)
+    .then(id => console.log('[delete] Issue #' + id));
+}
+
+// CLI
+
+const { argv } = args;
+
+if (argv._.length === 0) {
+  args.showHelp();
+}
+
+const command = argv._[0];
 
 switch (command) {
 
@@ -191,45 +220,49 @@ switch (command) {
 
   case 'status':
     ensureMangoRepo()
-      .then(() => Promise.all([getAccount(), getMangoAddress()]))
+      .then(() => Promise.all([getMangoAddress(), getAccount()]))
       .then(values => mangoStatus(values[0], values[1]))
       .catch(err => console.error(err));
 
     break;
 
-  case 'list-issues': {
+  case 'issues':
     ensureMangoRepo()
-      .then(() => mangoListIssues())
+      .then(() => Promise.all([getMangoAddress(), getAccount()]))
+      .then(values => mangoIssues(values[0], values[1]))
+      .catch(err => console.error(err));
+
+    break;
+
+  case 'get-issue': {
+    ensureMangoRepo()
+      .then(() => Promise.all([getMangoAddress(), getAccount()]))
+      .then(values => mangoGetIssue(values[0], values[1]))
       .catch(err => console.error(err));
 
     break;
   }
 
-  case 'show-issue': {
+  case 'new-issue':
     ensureMangoRepo()
-      .then(() => mangoShowIssue())
-      .catch(err => console.error(err));
-
-    break;
-  }
-
-  case 'create-issue':
-    ensureMangoRepo()
-      .then(() => mangoCreateIssue())
+      .then(() => Promise.all([getMangoAddress(), getAccount()]))
+      .then(values => mangoNewIssue(values[0], values[1]))
       .catch(err => console.error(err));
 
     break;
 
   case 'edit-issue':
     ensureMangoRepo()
-      .then(() => mangoEditIssue())
+      .then(() => Promise.all([getMangoAddress(), getAccount()]))
+      .then(values => mangoEditIssue(values[0], values[1]))
       .catch(err => console.error(err));
 
     break;
 
   case 'delete-issue':
     ensureMangoRepo()
-      .then(() => mangoDeleteIssue())
+      .then(() => Promise.all([getMangoAddress(), getAccount()]))
+      .then(values => mangoDeleteIssue(values[0], values[1]))
       .catch(err => console.error(err));
 
     break;

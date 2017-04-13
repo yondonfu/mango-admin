@@ -14,116 +14,119 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-pragma solidity ^0.4.8;
+pragma solidity ^0.4.6;
 
-import "./MangoRepoInterface.sol";
+contract MangoRepo {
+  mapping (address => bool) maintainers;
 
-contract MangoRepo is MangoRepoInterface {
-    mapping (address => bool) maintainers;
+  string[] refKeys;
+  mapping (string => string) refs;
 
-    string[] refKeys;
-    mapping (string => string) refs;
+  string[] snapshots;
 
-    string[] snapshots;
+  struct Issue {
+    uint id;
+    address creator;
+    string hash;
+  }
 
-    string[] issues;
-    mapping (uint => address) issueCreators;
+  Issue[] issues;
 
-    modifier maintainerOnly {
-      if (!maintainers[msg.sender]) throw;
-      _;
+  modifier maintainerOnly {
+    if (!maintainers[msg.sender]) throw;
+    _;
+  }
+
+  modifier creatorOnly(uint id) {
+    if (issues[id].creator != msg.sender) throw;
+    _;
+  }
+
+  function MangoRepo() {
+    maintainers[msg.sender] = true;
+  }
+
+  function refCount() constant returns (uint) {
+    return refKeys.length;
+  }
+
+  function refName(uint index) constant returns (string ref) {
+    ref = refKeys[index];
+  }
+
+  function getRef(string ref) constant returns (string hash) {
+    hash = refs[ref];
+  }
+
+  function __findRef(string ref) private returns (int) {
+    /* Horrible way to add a new key to the list */
+
+    for (var i = 0; i < refKeys.length; i++)
+      if (strEqual(refKeys[i], ref))
+        return i;
+
+    return -1;
+  }
+
+  function setRef(string ref, string hash) {
+    if (__findRef(ref) == -1)
+      refKeys.push(ref);
+
+    refs[ref] = hash;
+  }
+
+  function deleteRef(string ref) {
+    int pos = __findRef(ref);
+    if (pos != -1) {
+      // FIXME: shrink the array?
+      refKeys[uint(pos)] = "";
     }
 
-    modifier creatorOrMaintainerOnly(uint id) {
-      if (issueCreators[id] != msg.sender && !maintainers[msg.sender]) throw;
-      _;
-    }
+    // FIXME: null? string(0)?
+    refs[ref] = "";
+  }
 
-    function MangoRepo() {
-      maintainers[msg.sender] = true;
-    }
+  function strEqual(string a, string b) private returns (bool) {
+    return sha3(a) == sha3(b);
+  }
 
-    function repoInterfaceVersion() constant returns (uint version) {
-      version = 1;
-    }
+  function snapshotCount() constant returns (uint) {
+    return snapshots.length;
+  }
 
-    function refCount() constant returns (uint) {
-      return refKeys.length;
-    }
+  function getSnapshot(uint index) constant returns (string) {
+    return snapshots[index];
+  }
 
-    function refName(uint index) constant returns (string ref) {
-      ref = refKeys[index];
-    }
+  function addSnapshot(string hash) {
+    snapshots.push(hash);
+  }
 
-    function getRef(string ref) constant returns (string hash) {
-      hash = refs[ref];
-    }
+  function issueCount() constant returns (uint count) {
+    return issues.length;
+  }
 
-    fun
-      ction __findRef(string ref) private returns (int) {
-      /* Horrible way to add a new key to the list */
+  function getIssue(uint id) constant returns (string hash) {
+    if (id >= issues.length || id < 0) throw;
+    if (bytes(issues[id].hash).length == 0) throw;
 
-      for (var i = 0; i < refKeys.length; i++)
-        if (strEqual(refKeys[i], ref))
-          return i;
+    return issues[id].hash;
+  }
 
-      return -1;
-    }
+  function newIssue(string hash) {
+    issues.push(Issue(issues.length - 1, msg.sender, hash));
+  }
 
-    function setRef(string ref, string hash) committerOnly {
-      if (__findRef(ref) == -1)
-        refKeys.push(ref);
+  function setIssue(uint id, string hash) creatorOnly(id) {
+    if (id >= issues.length || id < 0) throw;
 
-      refs[ref] = hash;
-    }
+    issues[id].hash = hash;
+  }
 
-    function deleteRef(string ref) committerOnly {
-      int pos = __findRef(ref);
-      if (pos != -1) {
-        // FIXME: shrink the array?
-        refKeys[uint(pos)] = "";
-      }
+  function deleteIssue(uint id) creatorOnly(id) {
+    if (id >= issues.length || id < 0) throw;
+    if (bytes(issues[id].hash).length == 0) throw;
 
-      // FIXME: null? string(0)?
-      refs[ref] = "";
-    }
-
-    function strEqual(string a, string b) private returns (bool) {
-      return sha3(a) == sha3(b);
-    }
-
-    function snapshotCount() constant returns (uint) {
-      return snapshots.length;
-    }
-
-    function getSnapshot(uint index) constant returns (string) {
-      return snapshots[index];
-    }
-
-    function addSnapshot(string hash) committerOnly {
-      snapshots.push(hash);
-    }
-
-    function issueCount() constant returns (uint count) {
-      return issues.length;
-    }
-
-    function getIssue(uint id) constant returns (string hash) {
-      if (id >= issues.length || id < 0) throw;
-      if (bytes(issues[id]).length == 0) throw;
-
-      return issues[id];
-    }
-
-    function createIssue(string hash) {
-      issues.push(hash);
-      issueCreators[issues.length - 1] = msg.sender;
-    }
-
-    function deleteIssue(uint id) creatorOrMaintainerOnly(id) {
-      if (id >= issues.length || id < 0) throw;
-      if (bytes(issues[id]).length == 0) throw;
-
-      issues[id] = "";
-    }
+    delete issues[id];
+  }
 }

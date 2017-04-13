@@ -1,16 +1,16 @@
-import { default as MangoAdminLib } from './lib/mango-admin-lib';
+import MangoRepoLib from './lib/mangoRepoLib';
 import Web3 from 'web3';
 import contract from 'truffle-contract';
 
 import MangoRepoArtifact from './build/contracts/MangoRepo.json';
 
-export default function(host, port, repoAddress, fromAddress) {
+export default function(host, port, mangoAddress, fromAddress) {
   const provider = new Web3.providers.HttpProvider(`http:\/\/${host}:${port}`);
   const MangoRepo = contract(MangoRepoArtifact);
 
-  return new MangoAdminLib(
+  return new MangoRepoLib(
     MangoRepo,
-    repoAddress,
+    mangoAddress,
     provider,
     fromAddress
   );

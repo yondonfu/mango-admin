@@ -21,7 +21,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-pragma solidity ^0.4.8;
+pragma solidity ^0.4.6;
 
 contract MangoRepoInterface {
     function repoInterfaceVersion() constant returns (uint version);
