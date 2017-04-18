@@ -4,7 +4,7 @@ import yargs from 'yargs';
 import mkdirp from 'mkdirp';
 import fs from 'fs-extra';
 import path from 'path';
-import shelljs from 'shelljs';
+import shell from 'shelljs';
 import Web3 from 'Web3';
 
 import { default as initLib } from '../index';
@@ -139,9 +139,17 @@ function mangoStatus(mangoAddress, account) {
   const mangoRepoLib = initLib(host, port, mangoAddress, account);
 
   return mangoRepoLib.refs()
-    .then(refs => console.log(refs))
+    .then(refs => {
+      refs.map(ref => {
+        console.log('Reference: ' + ref.name + ' -> ' + ref.ref);
+      });
+    })
     .then(() => mangoRepoLib.snapshots())
-    .then(snapshots => console.log(snapshots));
+    .then(snapshots => {
+      snapshots.map((snapshot, i) => {
+        console.log('Snapshot #' + i + ' -> ' + snapshot);
+      });
+    }):
 }
 
 function mangoIssues(mangoAddress, account) {
@@ -251,8 +259,23 @@ function mangoMergeFork() {
     shell.exit(1);
   }
 
-  if (shell.exec('git merge --allow-unrelated-histories fork/master').code !== 0) {
+  if (shell.exec('git merge --no-commit --allow-unrelated-histories fork/master').code !== 0) {
     shell.echo('Error: Git merge failed');
+    shell.exit(1);
+  }
+
+  if (shell.exec('git reset HEAD .mango').code !== 0) {
+    shell.echo('Error: Git reset failed');
+    shell.exit(1);
+  }
+
+  if (shell.exec('git checkout -- .mango').code !== 0) {
+    shell.echo('Error: Git checkout failed');
+    shell.exit(1);
+  }
+
+  if (shell.exec('git commit -m \"merged fork/master\"').code !== 0) {
+    shell.echo('Error: Git commit failed');
     shell.exit(1);
   }
 
