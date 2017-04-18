@@ -30,7 +30,15 @@ contract MangoRepo {
     string hash;
   }
 
+  struct PullRequest {
+    uint id;
+    Issue issue;
+    address creator;
+    address fork;
+  }
+
   Issue[] issues;
+  PullRequest[] pullRequests;
 
   modifier maintainerOnly {
     if (!maintainers[msg.sender]) throw;
@@ -131,5 +139,32 @@ contract MangoRepo {
     if (bytes(issues[id].hash).length == 0) throw;
 
     delete issues[id];
+  }
+
+  function pullRequestCount() constant returns (uint count) {
+    return pullRequests.length;
+  }
+
+  function getPullRequest(uint id) constant returns (address fork) {
+    if (id >= pullRequests.length || id < 0) throw;
+
+    if (pullRequests[id].fork == address(0)) {
+      return address(0);
+    } else {
+      return pullRequests[id].fork;
+    }
+  }
+
+  function openPullRequest(uint issueId, address fork) {
+    if (bytes(issues[issueId].hash).length == 0) throw;
+
+    pullRequests.push(PullRequest(pullRequests.length - 1, issues[issueId], msg.sender, fork));
+  }
+
+  function closePullRequest(uint id) creatorOnly(id) {
+    if (id >= pullRequests.length || id < 0) throw;
+    if (pullRequests[id].fork == address(0)) throw;
+
+    delete pullRequests[id];
   }
 }

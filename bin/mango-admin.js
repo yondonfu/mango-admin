@@ -2,7 +2,9 @@
 
 import yargs from 'yargs';
 import mkdirp from 'mkdirp';
-import fs from 'fs';
+import fs from 'fs-extra';
+import path from 'path';
+import shelljs from 'shelljs';
 import Web3 from 'Web3';
 
 import { default as initLib } from '../index';
@@ -40,6 +42,12 @@ const args = yargs
       .command('new-issue', 'Create a new issue for a Mango repository')
       .command('edit-issue <id>', 'Edit an issue for a Mango repository')
       .command('delete-issue <id>', 'Delete issue for a Mango repository')
+      .command('fork <path>', 'Create a fork of a Mango repository')
+      .command('merge-fork <path>', 'Merge a fork into a Mango repository')
+      .command('pull-requests', 'List open pull requests for a Mango repository')
+      .command('get-pull-request <id>', 'Get a pull request referencing a fork')
+      .command('open-pull-request <issueId> <forkAddress>', 'Open a pull request referencing a fork')
+      .command('close-pull-request <id>', 'Close a pull request referencing a fork')
       .help()
       .usage('Usage: $0 [command]');
 
@@ -202,6 +210,102 @@ function mangoDeleteIssue(mangoAddress, account) {
     .then(id => console.log('[delete] Issue #' + id));
 }
 
+function mangoFork() {
+  console.log('Forking Mango repository...');
+
+  const { path } = argv;
+
+  const forkIgnore = [
+    '.mango',
+    'node_modules',
+    'build'
+  ];
+
+  const filter = name => {
+    return forkIgnore.reduce((acc, file) => {
+      return acc && !~name.indexOf(file);
+    }, true);
+  };
+
+  fs.copy('.', path, {filter: filter}, err => {
+    if (err) {
+      console.error(err);
+    } else {
+      console.log('Mango repository forked to ' + path);
+    }
+  });
+}
+
+function mangoMergeFork() {
+  console.log('Merging fork into Mango repository...');
+
+  const { path } = argv;
+
+  if (shell.exec('git remote add fork ' + path).code !== 0) {
+    shell.echo('Error: Git remote add failed');
+    shell.exit(1);
+  }
+
+  if (shell.exec('git fetch fork').code !== 0) {
+    shell.echo('Error: Git fetch failed');
+    shell.exit(1);
+  }
+
+  if (shell.exec('git merge --allow-unrelated-histories fork/master').code !== 0) {
+    shell.echo('Error: Git merge failed');
+    shell.exit(1);
+  }
+
+  if (shell.exec('git remote rm fork').code !== 0) {
+    shell.echo('Error: Git remote rm failed');
+    shell.exit(1);
+  }
+
+  console.log('Fork merged into Mango repository.');
+}
+
+function mangoPullRequests(mangoAddress, account) {
+  const { host, port } = argv;
+
+  const mangoRepoLib = initLib(host, port, mangoAddress, account);
+
+  return mangoRepoLib.pullRequests()
+    .then(pullRequests => {
+      pullRequests.map((pullRequest, i) => {
+        if (pullRequest != '0x0000000000000000000000000000000000000000') {
+          console.log('Pull Request #' + i + ' -> ' + pullRequest);
+        }
+      });
+    });
+}
+
+function mangoGetPullRequest(mangoAddress, account) {
+  const { host, port, id } = argv;
+
+  const mangoRepoLib = initLib(host, port, mangoAddress, account);
+
+  return mangoRepoLib.getPullRequest(id)
+    .then(forkAddress => console.log('Pull Request #' + id + ' -> ' + forkAddress));
+}
+
+function mangoOpenPullRequest(mangoAddress, account) {
+  const { host, port, issueId, forkAddress } = argv;
+
+  const mangoRepoLib = initLib(host, port, mangoAddress, account);
+
+  return mangoRepoLib.openPullRequest(issueId, forkAddress)
+    .then(id => console.log('[opened] Pull Request #' + id + ' for issue #' + issueId + ' -> ' + forkAddress));
+}
+
+function mangoClosePullRequest(mangoAddress, account) {
+  const { host, port, id } = argv;
+
+  const mangoRepoLib = initLib(host, port, mangoAddress, account);
+
+  return mangoRepoLib.closePullRequest(id)
+    .then(id => console.log('[closed] Pull Request #' + id));
+}
+
 // CLI
 
 const { argv } = args;
@@ -267,6 +371,52 @@ switch (command) {
     ensureMangoRepo()
       .then(() => Promise.all([getMangoAddress(), getAccount()]))
       .then(values => mangoDeleteIssue(values[0], values[1]))
+      .catch(err => console.error(err));
+
+    break;
+
+  case 'fork':
+    ensureMangoRepo()
+      .then(() => mangoFork())
+      .catch(err => console.error(err));
+
+    break;
+
+  case 'merge-fork':
+    ensureMangoRepo()
+      .then(() => mangoMergeFork())
+      .catch(err => console.error(err))
+
+    break;
+
+  case 'pull-requests':
+    ensureMangoRepo()
+      .then(() => Promise.all([getMangoAddress(), getAccount()]))
+      .then(values => mangoPullRequests(values[0], values[1]))
+      .catch(err => console.error(err))
+
+    break;
+
+  case 'get-pull-request':
+    ensureMangoRepo()
+      .then(() => Promise.all([getMangoAddress(), getAccount()]))
+      .then(values => mangoGetPullRequest(values[0], values[1]))
+      .catch(err => console.error(err))
+
+    break;
+
+  case 'open-pull-request':
+    ensureMangoRepo()
+      .then(() => Promise.all([getMangoAddress(), getAccount()]))
+      .then(values => mangoOpenPullRequest(values[0], values[1]))
+      .catch(err => console.error(err))
+
+    break;
+
+  case 'close-pull-request':
+    ensureMangoRepo()
+      .then(() => Promise.all([getMangoAddress(), getAccount()]))
+      .then(values => mangoClosePullRequest(values[0], values[1]))
       .catch(err => console.error(err));
 
     break;
