@@ -132,7 +132,7 @@ function mangoInit(account) {
 }
 
 function mangoStatus(mangoAddress, account) {
-  console.log('Mango repostitory status:');
+  console.log('Mango repository at ' + mangoAddress);
 
   const { host, port } = argv;
 
@@ -149,7 +149,7 @@ function mangoStatus(mangoAddress, account) {
       snapshots.map((snapshot, i) => {
         console.log('Snapshot #' + i + ' -> ' + snapshot);
       });
-    }):
+    });
 }
 
 function mangoIssues(mangoAddress, account) {
@@ -226,7 +226,6 @@ function mangoFork() {
   const forkIgnore = [
     '.mango',
     'node_modules',
-    'build'
   ];
 
   const filter = name => {
@@ -240,6 +239,13 @@ function mangoFork() {
       console.error(err);
     } else {
       console.log('Mango repository forked to ' + path);
+
+      shell.cd(path);
+
+      if (shell.exec('git remote rm origin').code !== 0) {
+        shell.echo('Error: Git remote rm failed');
+        shell.exit(1);
+      }
     }
   });
 }
@@ -259,7 +265,7 @@ function mangoMergeFork() {
     shell.exit(1);
   }
 
-  if (shell.exec('git merge --no-commit --allow-unrelated-histories fork/master').code !== 0) {
+  if (shell.exec('git merge --no-ff --no-commit --allow-unrelated-histories fork/master').code !== 0) {
     shell.echo('Error: Git merge failed');
     shell.exit(1);
   }

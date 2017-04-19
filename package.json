@@ -2,9 +2,10 @@
   "name": "mango-admin",
   "version": "0.1.0",
   "description": "CLI for Mango",
-  "bin": "mango-admin",
+  "bin": "public/bin/mango-admin.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "mkdir -p public && babel . --out-dir public --ignore node_modules",
     "mango-admin": "babel-node ./bin/mango-admin.js"
   },
   "repository": {
